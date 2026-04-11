@@ -17,24 +17,7 @@ DATA_FILE = "data.json"
 # ---------------- DATA ----------------
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-def get_user(data, guild_id, user_id):
-    gid = str(guild_id) if guild_id else "global"
-    uid = str(user_id)
-
-    data.setdefault(gid, {})
-    data[gid].setdefault(uid, {
-        "xp": 0,
-        "level": 0,
-        "treats": 100,
-        "last_treat": 0,
+        with open(DATA_FILE        "last_treat": 0,
         "last_beg": 0,
         "last_work": 0,
         "treat_upgrade": 0,
