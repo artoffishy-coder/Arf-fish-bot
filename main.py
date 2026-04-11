@@ -13,6 +13,7 @@ tree = bot.tree
 
 DATA_FILE = "data.json"
 
+# -------- DATA --------
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -47,7 +48,7 @@ def get_ids(interaction):
     return gid, interaction.user.id
 
 # -------- COMMANDS --------
-@tree.command(name="treat", description="Get treats")
+@tree.command(name="treat", description="Get treats 🦴")
 async def treat(interaction: discord.Interaction):
     data = load_data()
     gid, uid = get_ids(interaction)
@@ -67,7 +68,7 @@ async def treat(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"You got **{gain} treats** 🦴")
 
-@tree.command(name="beg", description="Beg for treats")
+@tree.command(name="beg", description="Beg for treats 🐶")
 async def beg(interaction: discord.Interaction):
     data = load_data()
     gid, uid = get_ids(interaction)
@@ -84,7 +85,7 @@ async def beg(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"You got **{gain} treats** 🐶")
 
-@tree.command(name="work", description="Work for treats")
+@tree.command(name="work", description="Work for treats 💼")
 async def work(interaction: discord.Interaction):
     data = load_data()
     gid, uid = get_ids(interaction)
@@ -101,24 +102,20 @@ async def work(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"You earned **{gain} treats** 💼")
 
-@tree.command(name="hug", description="Hug someone")
+@tree.command(name="hug", description="Hug someone 🤗")
 async def hug(interaction: discord.Interaction, member: discord.Member = None):
     target = member.mention if member else interaction.user.mention
     await interaction.response.send_message(f"{interaction.user.mention} hugs {target} 🤗")
-
-# -------- SYNC FIX --------
-@bot.event
-async def setup_hook():
-    guild = discord.Object(id=1465078377944977595)
-
-    tree.clear_commands(guild=guild)
-    await tree.sync(guild=guild)
-
-    print("Commands synced.")
 
 # -------- START --------
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+
+    try:
+        synced = await tree.sync()
+        print(f"✅ Synced {len(synced)} commands globally")
+    except Exception as e:
+        print(f"❌ Sync error: {e}")
 
 bot.run(TOKEN)
