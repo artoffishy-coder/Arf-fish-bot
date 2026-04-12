@@ -13,32 +13,23 @@ tree = bot.tree
 
 DATA_FILE = "data.json"
 
-# ---------------- SAFE SEND (FIXED) ----------------
+# ---------------- SAFE SEND ----------------
 async def safe_send(interaction, content=None, embed=None, view=None, ephemeral=False):
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                content=content,
-                embed=embed,
-                view=view,
-                ephemeral=ephemeral
+                content=content, embed=embed, view=view, ephemeral=ephemeral
             )
         else:
             await interaction.followup.send(
-                content=content,
-                embed=embed,
-                view=view,
-                ephemeral=ephemeral
+                content=content, embed=embed, view=view, ephemeral=ephemeral
             )
     except Exception:
         try:
             await interaction.followup.send(
-                content=content,
-                embed=embed,
-                view=view,
-                ephemeral=ephemeral
+                content=content, embed=embed, view=view, ephemeral=ephemeral
             )
-        except Exception:
+        except:
             pass
 
 # ---------------- DATA ----------------
@@ -68,9 +59,9 @@ def get_user(data, gid, uid):
     })
     return data[gid][uid]
 
-def get_ids(interaction):
-    gid = interaction.guild.id if interaction.guild else None
-    return gid, interaction.user.id
+def get_ids(i):
+    gid = i.guild.id if i.guild else None
+    return gid, i.user.id
 
 # ---------------- LEVEL ----------------
 def xp_for_level(level): return 100 * level
@@ -97,6 +88,20 @@ def mood_text(user,text):
     if user["mood"]=="grumpy": return "hmph… "+text
     if user["mood"]=="playful": return text+" WAN!! 🐶"
     return text
+
+# ---------------- ACHIEVEMENTS ----------------
+ACHIEVEMENTS = {
+    "rich": "💰 Reached 1000 treats!",
+    "level5": "📈 Reached level 5!"
+}
+
+def check_achievements(user):
+    new=[]
+    if user["treats"]>=1000 and "rich" not in user["achievements"]:
+        user["achievements"].append("rich"); new.append("rich")
+    if user["level"]>=5 and "level5" not in user["achievements"]:
+        user["achievements"].append("level5"); new.append("level5")
+    return new
 
 # ---------------- SHOP ----------------
 SHOP = {
@@ -142,9 +147,12 @@ async def handle_treat(i):
     gain=max(random.randint(5,10)+mood_bonus(u),1)
 
     u["treats"]+=gain; u["xp"]+=gain; u["level"]=get_level(u["xp"])
-    save_data(data)
+    new=check_achievements(u); save_data(data)
 
-    await safe_send(i,mood_text(u,f"You got **{gain} treats** 🦴"),view=TreatView(uid,u))
+    msg=mood_text(u,f"You got **{gain} treats** 🦴")
+    for a in new: msg+=f"\n🏆 {ACHIEVEMENTS[a]}"
+
+    await safe_send(i,msg,view=TreatView(uid,u))
 
 async def handle_beg(i):
     data=load_data(); gid,uid=get_ids(i); u=get_user(data,gid,uid)
@@ -172,21 +180,21 @@ async def handle_work(i):
 
 # ---------------- COMMANDS ----------------
 @tree.command(name="treat", description="Get treats and XP 🦴")
-async def treat(i: discord.Interaction): await handle_treat(i)
+async def treat(i:discord.Interaction): await handle_treat(i)
 
 @tree.command(name="beg", description="Beg for extra treats 🐶")
-async def beg(i: discord.Interaction): await handle_beg(i)
+async def beg(i:discord.Interaction): await handle_beg(i)
 
 @tree.command(name="work", description="Work to earn more treats 💼")
-async def work(i: discord.Interaction): await handle_work(i)
+async def work(i:discord.Interaction): await handle_work(i)
 
-@tree.command(name="shop", description="View the shop items 🛒")
-async def shop(i: discord.Interaction):
-    desc="\n".join([f"**{v['name']}** — {v['price']} 🦴\n{v['desc']}" for v in SHOP.values()])
-    await safe_send(i,embed=discord.Embed(title="🛒 Shop",description=desc,color=0xFFA500))
+@tree.command(name="shop", description="View shop 🛒")
+async def shop(i:discord.Interaction):
+    desc="\n".join([f"{v['name']} — {v['price']} 🦴" for v in SHOP.values()])
+    await safe_send(i,embed=discord.Embed(title="Shop",description=desc))
 
-@tree.command(name="buy", description="Buy an item from the shop 🛍️")
-async def buy(i: discord.Interaction, item: str):
+@tree.command(name="buy", description="Buy item 🛍️")
+async def buy(i:discord.Interaction,item:str):
     data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
 
     if item not in SHOP: return await safe_send(i,"Invalid item")
@@ -198,30 +206,64 @@ async def buy(i: discord.Interaction, item: str):
 
     await safe_send(i,f"Bought {SHOP[item]['name']}")
 
-@tree.command(name="inventory", description="Check your inventory 🎒")
-async def inventory(i: discord.Interaction):
+@tree.command(name="inventory", description="Check inventory 🎒")
+async def inventory(i:discord.Interaction):
     data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
-    items="\n".join(u["inventory"]) or "*Empty...*"
-    await safe_send(i,embed=discord.Embed(title="🎒 Inventory",description=items,color=0xFFA500))
+    items="\n".join(u["inventory"]) or "Empty"
+    await safe_send(i,embed=discord.Embed(title="Inventory",description=items))
 
-@tree.command(name="leaderboard", description="See top players 🏆")
-async def leaderboard(i: discord.Interaction):
-    data=load_data(); gid=str(i.guild.id) if i.guild else "global"
-    if gid not in data: return await safe_send(i,"No data yet!")
+@tree.command(name="achievements", description="View achievements 🏆")
+async def achievements(i:discord.Interaction):
+    data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
+    text="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "None"
+    await safe_send(i,embed=discord.Embed(title="Achievements",description=text))
 
-    users=data[gid]
+@tree.command(name="leaderboard", description="Top players 🏆")
+async def leaderboard(i:discord.Interaction):
+    data=load_data(); gid=str(i.guild.id)
+    users=data.get(gid,{})
     sorted_users=sorted(users.items(),key=lambda x:x[1]["treats"],reverse=True)
 
     desc=""
-    medals=["🥇","🥈","🥉"]
-
     for idx,(uid,u) in enumerate(sorted_users[:10],1):
-        try: name=(await bot.fetch_user(int(uid))).name
-        except: name="Unknown"
-        medal=medals[idx-1] if idx<=3 else f"`#{idx}`"
-        desc+=f"{medal} **{name}** — {u['treats']} 🦴\n"
+        desc+=f"{idx}. <@{uid}> — {u['treats']} 🦴\n"
 
-    await safe_send(i,embed=discord.Embed(title="🏆 Leaderboard",description=desc,color=0xFFA500))
+    await safe_send(i,embed=discord.Embed(title="Leaderboard",description=desc))
+
+# ---------------- RP ----------------
+@tree.command(name="hug", description="Hug someone 🤗")
+async def hug(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    await safe_send(i,f"{i.user.mention} hugs {t} 🤗")
+
+@tree.command(name="pat", description="Pat someone 🐶")
+async def pat(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    await safe_send(i,f"{i.user.mention} pats {t}")
+
+@tree.command(name="cuddle", description="Cuddle someone 💖")
+async def cuddle(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    await safe_send(i,f"{i.user.mention} cuddles {t}")
+
+# ---------------- TROLL ----------------
+@tree.command(name="heat", description="Feeling needy 😳")
+async def heat(i:discord.Interaction):
+    await safe_send(i,"WAN… you’re acting up 🐶")
+
+@tree.command(name="lewd", description="Test your luck 😈")
+async def lewd(i:discord.Interaction):
+    await safe_send(i,"I saw that. behave.")
+
+@tree.command(name="breed", description="No.")
+async def breed(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    await safe_send(i,f"{t} — nope.")
+
+# ---------------- HELP ----------------
+@tree.command(name="help", description="View commands 🐾")
+async def help_cmd(i:discord.Interaction):
+    await safe_send(i,"Use / to explore commands!")
 
 # ---------------- START ----------------
 @bot.event
