@@ -11,7 +11,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "arf_fish_v4.json"
+DATA_FILE = "arf_fish_v5.json"
 
 # ---------- SAFE SEND ----------
 async def safe_send(i, **kwargs):
@@ -202,22 +202,22 @@ CUDDLE_GIFS=[
 # ---------- COMMANDS ----------
 @tree.command(name="treat",description="Main panel 🐾")
 async def treat(i:discord.Interaction):
-    await safe_send(i,await treat_action(i),view=ActionView(i.user.id))
+    await safe_send(i, content=await treat_action(i), view=ActionView(i.user.id))
 
 @tree.command(name="beg",description="Beg 🐶")
 async def beg(i:discord.Interaction):
-    await safe_send(i,await beg_action(i))
+    await safe_send(i, content=await beg_action(i))
 
 @tree.command(name="work",description="Work 💼")
 async def work(i:discord.Interaction):
-    await safe_send(i,await work_action(i))
+    await safe_send(i, content=await work_action(i))
 
 @tree.command(name="daily",description="Daily reward 🎁")
 async def daily(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
 
     if time.time()-u["last_daily"]<86400:
-        return await safe_send(i,"come back later…")
+        return await safe_send(i, content="come back later…")
 
     u["last_daily"]=time.time()
     u["streak"]+=1
@@ -226,12 +226,12 @@ async def daily(i:discord.Interaction):
     u["treats"]+=reward
 
     save_data(d)
-    await safe_send(i,f"daily! {reward} treats (streak {u['streak']})")
+    await safe_send(i, content=f"daily! {reward} treats (streak {u['streak']})")
 
 @tree.command(name="shop",description="Shop 🛒")
 async def shop(i:discord.Interaction):
     txt="\n".join([f"{v['name']} — {v['price']}" for v in SHOP.values()])
-    await safe_send(i,txt)
+    await safe_send(i, content=txt)
 
 @tree.command(name="buy",description="Buy item")
 async def buy(i:discord.Interaction,item:str):
@@ -239,10 +239,10 @@ async def buy(i:discord.Interaction,item:str):
     item=item.lower().replace(" ","_")
 
     if item not in SHOP:
-        return await safe_send(i,"invalid item")
+        return await safe_send(i, content="invalid item")
 
     if u["treats"]<SHOP[item]["price"]:
-        return await safe_send(i,"not enough")
+        return await safe_send(i, content="not enough")
 
     u["treats"]-=SHOP[item]["price"]
 
@@ -260,12 +260,12 @@ async def buy(i:discord.Interaction,item:str):
         msg=f"bought {SHOP[item]['name']}"
 
     save_data(d)
-    await safe_send(i,msg)
+    await safe_send(i, content=msg)
 
 @tree.command(name="inventory",description="Inventory 🎒")
 async def inventory(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
-    await safe_send(i,"\n".join(u["inventory"]) or "empty")
+    await safe_send(i, content="\n".join(u["inventory"]) or "empty")
 
 @tree.command(name="leaderboard",description="Leaderboard 🏆")
 async def leaderboard(i:discord.Interaction):
@@ -273,35 +273,35 @@ async def leaderboard(i:discord.Interaction):
     users=d.get(g,{})
     top=sorted(users.items(),key=lambda x:x[1]["treats"],reverse=True)
     txt="\n".join([f"{i+1}. <@{uid}> {u['treats']}" for i,(uid,u) in enumerate(top[:10])])
-    await safe_send(i,txt or "no data")
+    await safe_send(i, content=txt or "no data")
 
 @tree.command(name="achievements",description="Achievements 🏅")
 async def achievements(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
     txt="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "none"
-    await safe_send(i,txt)
+    await safe_send(i, content=txt)
 
 @tree.command(name="hug",description="Hug 🤗")
 async def hug(i:discord.Interaction,member:discord.Member=None):
     e=discord.Embed(description=f"{i.user.mention} hugs {(member or i.user).mention}")
     e.set_image(url=random.choice(HUG_GIFS))
-    await safe_send(i,embed=e)
+    await safe_send(i, embed=e)
 
 @tree.command(name="pat",description="Pat 🐶")
 async def pat(i:discord.Interaction,member:discord.Member=None):
     e=discord.Embed(description=f"{i.user.mention} pats {(member or i.user).mention}")
     e.set_image(url=random.choice(PAT_GIFS))
-    await safe_send(i,embed=e)
+    await safe_send(i, embed=e)
 
 @tree.command(name="cuddle",description="Cuddle 💖")
 async def cuddle(i:discord.Interaction,member:discord.Member=None):
     e=discord.Embed(description=f"{i.user.mention} cuddles {(member or i.user).mention}")
     e.set_image(url=random.choice(CUDDLE_GIFS))
-    await safe_send(i,embed=e)
+    await safe_send(i, embed=e)
 
 @tree.command(name="help",description="Help 📜")
 async def help_cmd(i:discord.Interaction):
-    await safe_send(i,"/treat /beg /work /daily /shop /buy /inventory /leaderboard /achievements /hug /pat /cuddle")
+    await safe_send(i, content="/treat /beg /work /daily /shop /buy /inventory /leaderboard /achievements /hug /pat /cuddle")
 
 # ---------- START ----------
 @bot.event
