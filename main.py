@@ -13,12 +13,33 @@ tree = bot.tree
 
 DATA_FILE = "data.json"
 
-# ---------------- SAFE SEND ----------------
+# ---------------- SAFE SEND (FIXED) ----------------
 async def safe_send(interaction, content=None, embed=None, view=None, ephemeral=False):
-    if interaction.response.is_done():
-        await interaction.followup.send(content=content, embed=embed, view=view, ephemeral=ephemeral)
-    else:
-        await interaction.response.send_message(content=content, embed=embed, view=view, ephemeral=ephemeral)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                content=content,
+                embed=embed,
+                view=view,
+                ephemeral=ephemeral
+            )
+        else:
+            await interaction.followup.send(
+                content=content,
+                embed=embed,
+                view=view,
+                ephemeral=ephemeral
+            )
+    except Exception:
+        try:
+            await interaction.followup.send(
+                content=content,
+                embed=embed,
+                view=view,
+                ephemeral=ephemeral
+            )
+        except Exception:
+            pass
 
 # ---------------- DATA ----------------
 def load_data():
@@ -77,20 +98,6 @@ def mood_text(user,text):
     if user["mood"]=="playful": return text+" WAN!! 🐶"
     return text
 
-# ---------------- ACHIEVEMENTS ----------------
-ACHIEVEMENTS = {
-    "rich": "💰 Reached 1000 treats!",
-    "level5": "📈 Reached level 5!"
-}
-
-def check_achievements(user):
-    new=[]
-    if user["treats"]>=1000 and "rich" not in user["achievements"]:
-        user["achievements"].append("rich"); new.append("rich")
-    if user["level"]>=5 and "level5" not in user["achievements"]:
-        user["achievements"].append("level5"); new.append("level5")
-    return new
-
 # ---------------- SHOP ----------------
 SHOP = {
     "xp_boost": {"name":"XP Boost ⚡","price":50,"desc":"Gain extra XP"},
@@ -135,12 +142,9 @@ async def handle_treat(i):
     gain=max(random.randint(5,10)+mood_bonus(u),1)
 
     u["treats"]+=gain; u["xp"]+=gain; u["level"]=get_level(u["xp"])
-    new=check_achievements(u); save_data(data)
+    save_data(data)
 
-    msg=mood_text(u,f"You got **{gain} treats** 🦴")
-    for a in new: msg+=f"\n🏆 {ACHIEVEMENTS[a]}"
-
-    await safe_send(i,msg,view=TreatView(uid,u))
+    await safe_send(i,mood_text(u,f"You got **{gain} treats** 🦴"),view=TreatView(uid,u))
 
 async def handle_beg(i):
     data=load_data(); gid,uid=get_ids(i); u=get_user(data,gid,uid)
@@ -167,22 +171,22 @@ async def handle_work(i):
     await safe_send(i,mood_text(u,f"You earned **{gain} treats** 💼"))
 
 # ---------------- COMMANDS ----------------
-@tree.command(name="treat")
-async def treat(i:discord.Interaction): await handle_treat(i)
+@tree.command(name="treat", description="Get treats and XP 🦴")
+async def treat(i: discord.Interaction): await handle_treat(i)
 
-@tree.command(name="beg")
-async def beg(i:discord.Interaction): await handle_beg(i)
+@tree.command(name="beg", description="Beg for extra treats 🐶")
+async def beg(i: discord.Interaction): await handle_beg(i)
 
-@tree.command(name="work")
-async def work(i:discord.Interaction): await handle_work(i)
+@tree.command(name="work", description="Work to earn more treats 💼")
+async def work(i: discord.Interaction): await handle_work(i)
 
-@tree.command(name="shop")
-async def shop(i:discord.Interaction):
+@tree.command(name="shop", description="View the shop items 🛒")
+async def shop(i: discord.Interaction):
     desc="\n".join([f"**{v['name']}** — {v['price']} 🦴\n{v['desc']}" for v in SHOP.values()])
     await safe_send(i,embed=discord.Embed(title="🛒 Shop",description=desc,color=0xFFA500))
 
-@tree.command(name="buy")
-async def buy(i:discord.Interaction,item:str):
+@tree.command(name="buy", description="Buy an item from the shop 🛍️")
+async def buy(i: discord.Interaction, item: str):
     data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
 
     if item not in SHOP: return await safe_send(i,"Invalid item")
@@ -194,126 +198,30 @@ async def buy(i:discord.Interaction,item:str):
 
     await safe_send(i,f"Bought {SHOP[item]['name']}")
 
-@tree.command(name="inventory")
-async def inventory(i:discord.Interaction):
+@tree.command(name="inventory", description="Check your inventory 🎒")
+async def inventory(i: discord.Interaction):
     data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
     items="\n".join(u["inventory"]) or "*Empty...*"
     await safe_send(i,embed=discord.Embed(title="🎒 Inventory",description=items,color=0xFFA500))
 
-@tree.command(name="achievements")
-async def achievements(i:discord.Interaction):
-    data=load_data(); u=get_user(data,i.guild.id if i.guild else None,i.user.id)
-    text="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "*None yet*"
-    await safe_send(i,embed=discord.Embed(title="🏆 Achievements",description=text,color=0xFFA500))
-
-# ---------------- LEADERBOARD V2 ----------------
-@tree.command(name="leaderboard")
-async def leaderboard(i:discord.Interaction):
+@tree.command(name="leaderboard", description="See top players 🏆")
+async def leaderboard(i: discord.Interaction):
     data=load_data(); gid=str(i.guild.id) if i.guild else "global"
     if gid not in data: return await safe_send(i,"No data yet!")
 
     users=data[gid]
     sorted_users=sorted(users.items(),key=lambda x:x[1]["treats"],reverse=True)
 
-    medals=["🥇","🥈","🥉"]
     desc=""
+    medals=["🥇","🥈","🥉"]
 
     for idx,(uid,u) in enumerate(sorted_users[:10],1):
         try: name=(await bot.fetch_user(int(uid))).name
         except: name="Unknown"
         medal=medals[idx-1] if idx<=3 else f"`#{idx}`"
-        desc+=f"{medal} **{name}** — {u['treats']} 🦴 | Lv {u.get('level',0)}\n"
+        desc+=f"{medal} **{name}** — {u['treats']} 🦴\n"
 
-    rank=None
-    for idx,(uid,_) in enumerate(sorted_users,1):
-        if int(uid)==i.user.id: rank=idx
-
-    if rank:
-        desc+="\n━━━━━━━━━━━━━━\n"
-        desc+=f"👤 **You are #{rank}**"
-
-    e=discord.Embed(title="🏆 Leaderboard",description=desc,color=0xFFA500)
-    e.set_footer(text="Climb the ranks, pup 🐶🔥")
-    await safe_send(i,embed=e)
-
-# ---------------- RP ----------------
-GIFS={
-    "hug":["https://media.tenor.com/8Q2R3kUuS8cAAAAC/anime-hug.gif"],
-    "pat":["https://media.tenor.com/4w5P.gif"],
-    "cuddle":["https://media.tenor.com/9jYg.gif"]
-}
-
-async def rp(i,target,text,key):
-    t=target.mention if target else i.user.mention
-    e=discord.Embed(description=text.format(user=i.user.mention,target=t),color=0xFFA500)
-    e.set_image(url=random.choice(GIFS[key]))
-    await safe_send(i,embed=e)
-
-@tree.command(name="hug")
-async def hug(i:discord.Interaction,m:discord.Member=None):
-    await rp(i,m,"{user} hugs {target} 🤗","hug")
-
-@tree.command(name="pat")
-async def pat(i:discord.Interaction,m:discord.Member=None):
-    await rp(i,m,"{user} pats {target} 🐶","pat")
-
-@tree.command(name="cuddle")
-async def cuddle(i:discord.Interaction,m:discord.Member=None):
-    await rp(i,m,"{user} cuddles {target} 💖","cuddle")
-
-# ---------------- TROLL (ARF-FISH PERSONALITY) ----------------
-def troll_embed(title,text):
-    e=discord.Embed(title=title,description=text,color=0xFFA500)
-    e.set_footer(text="🐾 arf-fish tilts her head, watching you closely…")
-    return e
-
-HEAT_LINES=[
-    "WAN… someone’s getting needy aren’t they? 🐶",
-    "*tail wagging* what are you thinking about? 😳",
-    "you pressed this on purpose didn’t you…?",
-    "careful… I might come closer 👀",
-]
-
-LEWD_LINES=[
-    "*ears perk* oh… bold.",
-    "denied… but noted 👀",
-    "you’re getting really close 🐾",
-    "I’m watching you now.",
-]
-
-BREED_LINES=[
-    "*pounces* nope. not happening 😳",
-    "you’re getting tackled instead 🐶",
-    "redirected → cuddles 💖",
-    "come here. you’re being handled.",
-]
-
-@tree.command(name="heat")
-async def heat(i:discord.Interaction):
-    await safe_send(i,embed=troll_embed("😳 Heat...",random.choice(HEAT_LINES)))
-
-@tree.command(name="lewd")
-async def lewd(i:discord.Interaction):
-    await safe_send(i,embed=troll_embed("⚠️ Lewd Energy",random.choice(LEWD_LINES)))
-
-@tree.command(name="breed")
-async def breed(i:discord.Interaction,m:discord.Member=None):
-    t=m.mention if m else i.user.mention
-    await safe_send(i,embed=troll_embed("🚫 Blocked",f"{t} — {random.choice(BREED_LINES)}"))
-
-# ---------------- HELP ----------------
-class HelpView(discord.ui.View):
-    @discord.ui.button(label="Economy",style=discord.ButtonStyle.primary)
-    async def eco(self,i,b):
-        await i.response.edit_message(content="/treat /beg /work /shop /buy /inventory /leaderboard",view=self)
-
-    @discord.ui.button(label="Fun",style=discord.ButtonStyle.secondary)
-    async def fun(self,i,b):
-        await i.response.edit_message(content="/hug /pat /cuddle /heat /lewd /breed",view=self)
-
-@tree.command(name="help")
-async def help_cmd(i:discord.Interaction):
-    await safe_send(i,content="Use buttons 👇",view=HelpView())
+    await safe_send(i,embed=discord.Embed(title="🏆 Leaderboard",description=desc,color=0xFFA500))
 
 # ---------------- START ----------------
 @bot.event
