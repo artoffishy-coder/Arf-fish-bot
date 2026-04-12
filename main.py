@@ -1,5 +1,3 @@
-# ⚠️ FULL CRAMMED BUILD (HEAVY)
-
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -13,7 +11,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "arf_fish_v3.json"
+DATA_FILE = "arf_fish_v4.json"
 
 # ---------- SAFE SEND ----------
 async def safe_send(i, **kwargs):
@@ -70,6 +68,7 @@ def mood_bonus(u):
 def mood_text(u,t):
     if u["mood"]=="playful": return t+" WAN!! 🐶"
     if u["mood"]=="grumpy": return "hmph… "+t
+    if u["mood"]=="happy": return t+" *happy wag*"
     return t
 
 def get_level(xp):
@@ -78,6 +77,20 @@ def get_level(xp):
         xp-=100*(lvl+1)
         lvl+=1
     return lvl
+
+# ---------- ACHIEVEMENTS ----------
+ACHIEVEMENTS={
+    "rich":"💰 1000 treats",
+    "level5":"📈 level 5"
+}
+
+def check_achievements(u):
+    new=[]
+    if u["treats"]>=1000 and "rich" not in u["achievements"]:
+        u["achievements"].append("rich"); new.append("rich")
+    if u["level"]>=5 and "level5" not in u["achievements"]:
+        u["achievements"].append("level5"); new.append("level5")
+    return new
 
 # ---------- SHOP ----------
 SHOP={
@@ -89,12 +102,12 @@ SHOP={
 }
 
 # ---------- EFFECTS ----------
-def apply_item_effects(u,gain):
+def apply_item_effects(u,g):
     if "XP Boost ⚡" in u["inventory"]:
-        gain*=2
+        g*=2
     if "Lucky Paw 🍀" in u["inventory"]:
-        gain+=random.randint(2,5)
-    return gain
+        g+=random.randint(2,5)
+    return g
 
 def cooldown_reduce(u,cd):
     if "Zoomies ⚡🐾" in u["inventory"]:
@@ -106,23 +119,29 @@ async def treat_action(i):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
 
     if time.time()-u["last_treat"]<cooldown_reduce(u,10):
-        return "⏱️ wait... need pats..."
+        return "⏱️ wait… need pats…"
 
     u["last_treat"]=time.time()
     update_mood(u)
 
-    gain=random.randint(5,10)
-    gain=apply_item_effects(u,gain)
+    gain=apply_item_effects(u,random.randint(5,10)+mood_bonus(u))
+    gain=max(gain,1)
 
     u["treats"]+=gain
     u["xp"]+=gain
     u["level"]=get_level(u["xp"])
 
+    new=check_achievements(u)
+
     save_data(d)
-    return mood_text(u,f"*wags tail* got {gain} treats 🦴")
+
+    msg=mood_text(u,f"got {gain} treats 🦴")
+    for a in new:
+        msg+=f"\n🏆 {ACHIEVEMENTS[a]}"
+    return msg
 
 async def beg_action(i):
-    d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
+    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
 
     if time.time()-u["last_beg"]<cooldown_reduce(u,60):
         return "too soon… whine…"
@@ -132,23 +151,68 @@ async def beg_action(i):
 
     u["treats"]+=gain
     save_data(d)
-    return f"*puppy eyes* got {gain} treats 🐶"
+    return mood_text(u,f"*puppy eyes* got {gain} treats 🐶")
 
 async def work_action(i):
-    d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
+    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
 
     if time.time()-u["last_work"]<cooldown_reduce(u,120):
-        return "too tired… nap time…"
+        return "too tired… nap…"
 
     u["last_work"]=time.time()
     gain=apply_item_effects(u,random.randint(20,40))
 
     u["treats"]+=gain
     save_data(d)
-    return f"*works hard wagging tail* earned {gain} 💼"
+    return mood_text(u,f"*works hard* earned {gain} 💼")
 
-# ---------- DAILY ----------
-@tree.command(name="daily",description="Daily treats 🎁")
+# ---------- UI ----------
+class ActionView(discord.ui.View):
+    def __init__(self, uid):
+        super().__init__(timeout=60)
+        self.uid=uid
+
+    async def interaction_check(self,i):
+        return i.user.id==self.uid
+
+    @discord.ui.button(label="Treat 🦴",style=discord.ButtonStyle.primary)
+    async def t(self,i,b):
+        await i.response.edit_message(content=await treat_action(i),view=self)
+
+    @discord.ui.button(label="Beg 🐶",style=discord.ButtonStyle.secondary)
+    async def b(self,i,b2):
+        await i.response.edit_message(content=await beg_action(i),view=self)
+
+    @discord.ui.button(label="Work 💼",style=discord.ButtonStyle.success)
+    async def w(self,i,b3):
+        await i.response.edit_message(content=await work_action(i),view=self)
+
+# ---------- RP GIFS ----------
+HUG_GIFS=[
+ "https://media.tenor.com/8Q2R3kUuS8cAAAAC/anime-hug.gif",
+ "https://media.tenor.com/0AVbKGY_MxMAAAAC/anime-hug.gif"
+]
+PAT_GIFS=[
+ "https://media.tenor.com/Xg6N5Q9Y6gAAAAAC/anime-headpat.gif"
+]
+CUDDLE_GIFS=[
+ "https://media.tenor.com/H2X7b7ZQZbQAAAAC/anime-cuddle.gif"
+]
+
+# ---------- COMMANDS ----------
+@tree.command(name="treat",description="Main panel 🐾")
+async def treat(i:discord.Interaction):
+    await safe_send(i,await treat_action(i),view=ActionView(i.user.id))
+
+@tree.command(name="beg",description="Beg 🐶")
+async def beg(i:discord.Interaction):
+    await safe_send(i,await beg_action(i))
+
+@tree.command(name="work",description="Work 💼")
+async def work(i:discord.Interaction):
+    await safe_send(i,await work_action(i))
+
+@tree.command(name="daily",description="Daily reward 🎁")
 async def daily(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
 
@@ -164,7 +228,11 @@ async def daily(i:discord.Interaction):
     save_data(d)
     await safe_send(i,f"daily! {reward} treats (streak {u['streak']})")
 
-# ---------- BUY ----------
+@tree.command(name="shop",description="Shop 🛒")
+async def shop(i:discord.Interaction):
+    txt="\n".join([f"{v['name']} — {v['price']}" for v in SHOP.values()])
+    await safe_send(i,txt)
+
 @tree.command(name="buy",description="Buy item")
 async def buy(i:discord.Interaction,item:str):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
@@ -174,48 +242,32 @@ async def buy(i:discord.Interaction,item:str):
         return await safe_send(i,"invalid item")
 
     if u["treats"]<SHOP[item]["price"]:
-        return await safe_send(i,"too poor…")
+        return await safe_send(i,"not enough")
 
     u["treats"]-=SHOP[item]["price"]
-
-    name=SHOP[item]["name"]
 
     if item=="mystery_box":
         bonus=random.randint(20,100)
         u["treats"]+=bonus
-        msg=f"🎁 opened! got {bonus} treats!"
+        msg=f"🎁 got {bonus}"
 
     elif item=="strange_potion":
         u["mood"]=random.choice(MOODS)
-        msg=f"🧪 mood changed to {u['mood']}"
+        msg=f"🧪 mood: {u['mood']}"
 
     else:
-        u["inventory"].append(name)
-        msg=f"bought {name}"
+        u["inventory"].append(SHOP[item]["name"])
+        msg=f"bought {SHOP[item]['name']}"
 
     save_data(d)
     await safe_send(i,msg)
 
-# ---------- BASIC COMMANDS ----------
-@tree.command(name="treat",description="Main action panel")
-async def treat(i:discord.Interaction):
-    msg=await treat_action(i)
-    await safe_send(i,msg)
-
-@tree.command(name="beg",description="Beg")
-async def beg(i:discord.Interaction):
-    await safe_send(i,await beg_action(i))
-
-@tree.command(name="work",description="Work")
-async def work(i:discord.Interaction):
-    await safe_send(i,await work_action(i))
-
-@tree.command(name="inventory",description="Inventory")
+@tree.command(name="inventory",description="Inventory 🎒")
 async def inventory(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id,i.user.id)
     await safe_send(i,"\n".join(u["inventory"]) or "empty")
 
-@tree.command(name="leaderboard",description="Leaderboard")
+@tree.command(name="leaderboard",description="Leaderboard 🏆")
 async def leaderboard(i:discord.Interaction):
     d=load_data(); g=str(i.guild.id)
     users=d.get(g,{})
@@ -223,16 +275,39 @@ async def leaderboard(i:discord.Interaction):
     txt="\n".join([f"{i+1}. <@{uid}> {u['treats']}" for i,(uid,u) in enumerate(top[:10])])
     await safe_send(i,txt or "no data")
 
-# ---------- RP ----------
-@tree.command(name="hug",description="Hug")
+@tree.command(name="achievements",description="Achievements 🏅")
+async def achievements(i:discord.Interaction):
+    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
+    txt="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "none"
+    await safe_send(i,txt)
+
+@tree.command(name="hug",description="Hug 🤗")
 async def hug(i:discord.Interaction,member:discord.Member=None):
-    await safe_send(i,f"{i.user.mention} hugs {(member or i.user).mention}")
+    e=discord.Embed(description=f"{i.user.mention} hugs {(member or i.user).mention}")
+    e.set_image(url=random.choice(HUG_GIFS))
+    await safe_send(i,embed=e)
+
+@tree.command(name="pat",description="Pat 🐶")
+async def pat(i:discord.Interaction,member:discord.Member=None):
+    e=discord.Embed(description=f"{i.user.mention} pats {(member or i.user).mention}")
+    e.set_image(url=random.choice(PAT_GIFS))
+    await safe_send(i,embed=e)
+
+@tree.command(name="cuddle",description="Cuddle 💖")
+async def cuddle(i:discord.Interaction,member:discord.Member=None):
+    e=discord.Embed(description=f"{i.user.mention} cuddles {(member or i.user).mention}")
+    e.set_image(url=random.choice(CUDDLE_GIFS))
+    await safe_send(i,embed=e)
+
+@tree.command(name="help",description="Help 📜")
+async def help_cmd(i:discord.Interaction):
+    await safe_send(i,"/treat /beg /work /daily /shop /buy /inventory /leaderboard /achievements /hug /pat /cuddle")
 
 # ---------- START ----------
 @bot.event
 async def on_ready():
-    print("🔥 FULL CHAOS BUILD LOADED")
+    print("🔥 TRUE FINAL BUILD LOADED")
     synced=await tree.sync()
-    print(f"{len(synced)} cmds")
+    print(f"Synced {len(synced)} commands")
 
 bot.run(TOKEN)
