@@ -4,7 +4,6 @@ from discord import app_commands
 import json, os, random, time
 
 TOKEN = os.getenv("TOKEN")
-GUILD_ID = 1465078377944977595
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -182,12 +181,12 @@ async def treat(i:discord.Interaction):
     msg = await treat_action(i)
     await safe_send(i, content=msg, view=ActionView(i.user.id,u))
 
-@tree.command(name="shop", description="View shop")
+@tree.command(name="shop", description="View shop 🛒")
 async def shop(i:discord.Interaction):
     text="\n".join([f"{v['name']} — {v['price']} 🦴" for v in SHOP.values()])
     await safe_send(i, content=text)
 
-@tree.command(name="buy", description="Buy item")
+@tree.command(name="buy", description="Buy item 🛍️")
 async def buy(i:discord.Interaction,item:str):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
     if item not in SHOP:
@@ -199,24 +198,24 @@ async def buy(i:discord.Interaction,item:str):
     save_data(d)
     await safe_send(i,f"Bought {SHOP[item]['name']}")
 
-@tree.command(name="inventory", description="Check inventory")
+@tree.command(name="inventory", description="Check inventory 🎒")
 async def inventory(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
-    await safe_send(i,"\n".join(u["inventory"]) or "Empty")
+    await safe_send(i, content="\n".join(u["inventory"]) or "Empty")
 
-@tree.command(name="leaderboard", description="Top players")
+@tree.command(name="leaderboard", description="Top players 🏆")
 async def leaderboard(i:discord.Interaction):
     d=load_data(); gid=str(i.guild.id)
     users=d.get(gid,{})
     sorted_users=sorted(users.items(),key=lambda x:x[1]["treats"],reverse=True)
     text="\n".join([f"{idx+1}. <@{uid}> — {u['treats']} 🦴" for idx,(uid,u) in enumerate(sorted_users[:10])])
-    await safe_send(i,text or "No data")
+    await safe_send(i, content=text or "No data")
 
-@tree.command(name="achievements", description="View achievements")
+@tree.command(name="achievements", description="View achievements 🏅")
 async def achievements(i:discord.Interaction):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
     text="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "None"
-    await safe_send(i,text)
+    await safe_send(i, content=text)
 
 @tree.command(name="hug", description="Hug 🤗")
 async def hug(i:discord.Interaction,m:discord.Member=None):
@@ -239,30 +238,21 @@ async def cuddle(i:discord.Interaction,m:discord.Member=None):
     e.set_image(url=random.choice(CUDDLE_GIFS))
     await safe_send(i,embed=e)
 
-# ---------- PERSONALITY ----------
-@tree.command(name="heat", description="Needy mode 😳")
-async def heat(i:discord.Interaction):
-    await safe_send(i,"wan… why am I like this… 🐶")
-
-@tree.command(name="lewd", description="Danger 😈")
-async def lewd(i:discord.Interaction):
-    await safe_send(i,"hey— behave… or maybe don’t…")
-
-@tree.command(name="breed", description="No.")
-async def breed(i:discord.Interaction,m:discord.Member=None):
-    t=m.mention if m else i.user.mention
-    await safe_send(i,f"{t} — absolutely not.")
-
-@tree.command(name="help", description="Help menu")
+@tree.command(name="help", description="Help menu 🐾")
 async def help_cmd(i:discord.Interaction):
-    await safe_send(i,"Use /treat to play!")
+    await safe_send(i, content="Use /treat to play!")
 
 # ---------- START ----------
 @bot.event
 async def on_ready():
-    print("ULTIMATE ARF-FISH BUILD LOADED")
-    guild = discord.Object(id=GUILD_ID)
-    synced = await tree.sync(guild=guild)
-    print(f"⚡ Synced {len(synced)} commands")
+    print("🌍 ARF-FISH FINAL BUILD LOADED")
+
+    try:
+        synced = await tree.sync()
+        print(f"🌍 Synced {len(synced)} commands globally")
+    except Exception as e:
+        print(f"❌ Sync error: {e}")
+
+    print(f"Logged in as {bot.user}")
 
 bot.run(TOKEN)
