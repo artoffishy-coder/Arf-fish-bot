@@ -4,6 +4,7 @@ from discord import app_commands
 import json, os, random, time
 
 TOKEN = os.getenv("TOKEN")
+GUILD_ID = 1465078377944977595
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -51,7 +52,7 @@ def get_user(data, gid, uid):
 
     return user
 
-# ---------- SYSTEMS ----------
+# ---------- SYSTEM ----------
 MOODS = ["happy","neutral","grumpy","playful"]
 
 def update_mood(u):
@@ -119,31 +120,25 @@ async def treat_action(i):
 
 async def beg_action(i):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
-
     if time.time()-u["last_beg"]<60:
         return "⏱️ Too soon!"
-
     u["last_beg"]=time.time()
     gain=random.randint(10,25)
     u["treats"]+=gain
     save_data(d)
-
     return mood_text(u,f"You got {gain} treats 🐶")
 
 async def work_action(i):
     d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
-
     if time.time()-u["last_work"]<120:
         return "⏱️ Too tired!"
-
     u["last_work"]=time.time()
     gain=random.randint(20,40)
     u["treats"]+=gain
     save_data(d)
-
     return mood_text(u,f"You earned {gain} treats 💼")
 
-# ---------- UI PANEL ----------
+# ---------- UI ----------
 class ActionView(discord.ui.View):
     def __init__(self, user_id, user):
         super().__init__(timeout=60)
@@ -175,6 +170,11 @@ class ActionView(discord.ui.View):
         d=load_data(); u=get_user(d,interaction.guild.id if interaction.guild else None,interaction.user.id)
         await interaction.response.edit_message(content=msg, view=ActionView(self.user_id,u))
 
+# ---------- RP GIFS ----------
+HUG_GIFS = ["https://media.tenor.com/8Q2R3kUuS8cAAAAC/anime-hug.gif"]
+PAT_GIFS = ["https://media.tenor.com/Xg6N5Q9Y6gAAAAAC/anime-headpat.gif"]
+CUDDLE_GIFS = ["https://media.tenor.com/H2X7b7ZQZbQAAAAC/anime-cuddle.gif"]
+
 # ---------- COMMANDS ----------
 @tree.command(name="treat", description="Open action panel 🐾")
 async def treat(i:discord.Interaction):
@@ -182,13 +182,87 @@ async def treat(i:discord.Interaction):
     msg = await treat_action(i)
     await safe_send(i, content=msg, view=ActionView(i.user.id,u))
 
-# (rest of commands stay same as before — shop, buy, leaderboard, rp, etc.)
+@tree.command(name="shop", description="View shop")
+async def shop(i:discord.Interaction):
+    text="\n".join([f"{v['name']} — {v['price']} 🦴" for v in SHOP.values()])
+    await safe_send(i, content=text)
+
+@tree.command(name="buy", description="Buy item")
+async def buy(i:discord.Interaction,item:str):
+    d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
+    if item not in SHOP:
+        return await safe_send(i,"Invalid item")
+    if u["treats"]<SHOP[item]["price"]:
+        return await safe_send(i,"Not enough treats")
+    u["treats"]-=SHOP[item]["price"]
+    u["inventory"].append(SHOP[item]["name"])
+    save_data(d)
+    await safe_send(i,f"Bought {SHOP[item]['name']}")
+
+@tree.command(name="inventory", description="Check inventory")
+async def inventory(i:discord.Interaction):
+    d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
+    await safe_send(i,"\n".join(u["inventory"]) or "Empty")
+
+@tree.command(name="leaderboard", description="Top players")
+async def leaderboard(i:discord.Interaction):
+    d=load_data(); gid=str(i.guild.id)
+    users=d.get(gid,{})
+    sorted_users=sorted(users.items(),key=lambda x:x[1]["treats"],reverse=True)
+    text="\n".join([f"{idx+1}. <@{uid}> — {u['treats']} 🦴" for idx,(uid,u) in enumerate(sorted_users[:10])])
+    await safe_send(i,text or "No data")
+
+@tree.command(name="achievements", description="View achievements")
+async def achievements(i:discord.Interaction):
+    d=load_data(); u=get_user(d,i.guild.id if i.guild else None,i.user.id)
+    text="\n".join([ACHIEVEMENTS[a] for a in u["achievements"]]) or "None"
+    await safe_send(i,text)
+
+@tree.command(name="hug", description="Hug 🤗")
+async def hug(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    e=discord.Embed(description=f"{i.user.mention} hugs {t}")
+    e.set_image(url=random.choice(HUG_GIFS))
+    await safe_send(i,embed=e)
+
+@tree.command(name="pat", description="Pat 🐶")
+async def pat(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    e=discord.Embed(description=f"{i.user.mention} pats {t}")
+    e.set_image(url=random.choice(PAT_GIFS))
+    await safe_send(i,embed=e)
+
+@tree.command(name="cuddle", description="Cuddle 💖")
+async def cuddle(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    e=discord.Embed(description=f"{i.user.mention} cuddles {t}")
+    e.set_image(url=random.choice(CUDDLE_GIFS))
+    await safe_send(i,embed=e)
+
+# ---------- PERSONALITY ----------
+@tree.command(name="heat", description="Needy mode 😳")
+async def heat(i:discord.Interaction):
+    await safe_send(i,"wan… why am I like this… 🐶")
+
+@tree.command(name="lewd", description="Danger 😈")
+async def lewd(i:discord.Interaction):
+    await safe_send(i,"hey— behave… or maybe don’t…")
+
+@tree.command(name="breed", description="No.")
+async def breed(i:discord.Interaction,m:discord.Member=None):
+    t=m.mention if m else i.user.mention
+    await safe_send(i,f"{t} — absolutely not.")
+
+@tree.command(name="help", description="Help menu")
+async def help_cmd(i:discord.Interaction):
+    await safe_send(i,"Use /treat to play!")
 
 # ---------- START ----------
 @bot.event
 async def on_ready():
-    print("ARF-FISH UI BUILD LOADED")
-    synced=await tree.sync()
-    print(f"✅ Synced {len(synced)} commands")
+    print("ULTIMATE ARF-FISH BUILD LOADED")
+    guild = discord.Object(id=GUILD_ID)
+    synced = await tree.sync(guild=guild)
+    print(f"⚡ Synced {len(synced)} commands")
 
 bot.run(TOKEN)
