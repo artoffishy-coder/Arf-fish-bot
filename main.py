@@ -11,7 +11,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "data.json"
+DATA_FILE = "fresh_data.json"
 
 # ---------------- SAFE SEND ----------------
 async def safe_send(interaction, content=None, embed=None, view=None, ephemeral=False):
