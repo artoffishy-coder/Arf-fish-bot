@@ -9,7 +9,7 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "arf_fish_v8.json"
+DATA_FILE = "arf_fish_v9.json"
 
 # ---------- SAFE SEND ----------
 async def safe_send(i, **kwargs):
@@ -81,8 +81,7 @@ async def treat_action(i):
 
     u["last_treat"] = time.time()
 
-    gain = random.randint(5, 10)
-    gain = apply_items(u, gain)
+    gain = apply_items(u, random.randint(5,10))
 
     xp = gain
     if time.time() < u["xp_boost_until"]:
@@ -102,7 +101,7 @@ async def beg_action(i):
         return "too soon…"
 
     u["last_beg"] = time.time()
-    gain = random.randint(10, 25)
+    gain = random.randint(10,25)
 
     u["treats"] += gain
     save_data(d)
@@ -116,7 +115,7 @@ async def work_action(i):
         return "too tired…"
 
     u["last_work"] = time.time()
-    gain = random.randint(20, 40)
+    gain = random.randint(20,40)
 
     u["treats"] += gain
     save_data(d)
@@ -280,11 +279,38 @@ async def cuddle(i: discord.Interaction, member: discord.Member=None):
     embed.set_image(url=random.choice(CUDDLE_GIFS))
     await safe_send(i, embed=embed)
 
-# ---------- START ----------
+# ---------- DEBUG LOGGING ----------
 @bot.event
 async def on_ready():
-    print("🔥 V8.1 FINAL (POLISHED + COINFLIP)")
-    synced = await tree.sync()
-    print(f"Synced {len(synced)} commands")
+    print("\n🔥 ===== BOT START =====")
+
+    try:
+        synced = await tree.sync()
+        print(f"🌍 Synced {len(synced)} commands")
+
+        local_cmds = [cmd.name for cmd in tree.get_commands()]
+        synced_cmds = [cmd.name for cmd in synced]
+
+        print("\n📦 LOCAL COMMANDS:")
+        for c in local_cmds:
+            print(f" - {c}")
+
+        print("\n🌍 SYNCED COMMANDS:")
+        for c in synced_cmds:
+            print(f" - {c}")
+
+        missing = [c for c in local_cmds if c not in synced_cmds]
+
+        if missing:
+            print("\n❌ MISSING COMMANDS:")
+            for c in missing:
+                print(f" - {c}")
+        else:
+            print("\n✅ ALL COMMANDS SYNCED")
+
+    except Exception as e:
+        print("❌ Sync error:", e)
+
+    print("\n🚀 BOT READY\n")
 
 bot.run(TOKEN)
