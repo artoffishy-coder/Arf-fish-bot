@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json, os, random, time
+import json, os, random, time, asyncio
 
 TOKEN = os.getenv("TOKEN")
 
@@ -9,7 +9,7 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "arf_fish_v9.json"
+DATA_FILE = "arf_fish_v10.json"
 
 # ---------- SAFE SEND ----------
 async def safe_send(i, **kwargs):
@@ -38,7 +38,6 @@ def get_user(d, g, u):
     d.setdefault(g, {})
     d[g].setdefault(u, {
         "xp":0,"level":0,"treats":100,
-        "inventory":[],
         "last_treat":0,"last_beg":0,"last_work":0,"last_daily":0,
         "streak":0,
         "treat_upgrade":0,
@@ -53,11 +52,9 @@ HUG_GIFS = [
 "https://media.tenor.com/6f7rF0l1R4cAAAAC/anime-hug.gif",
 "https://media.tenor.com/OXCV_qL-V60AAAAC/mochi-peachcat-hug.gif"
 ]
-
 PAT_GIFS = [
 "https://media.tenor.com/Ws6Dm1ZW_vMAAAAC/pat-head.gif"
 ]
-
 CUDDLE_GIFS = [
 "https://media.tenor.com/H2X7b7ZQZbQAAAAC/anime-cuddle.gif"
 ]
@@ -65,11 +62,9 @@ CUDDLE_GIFS = [
 # ---------- ITEM EFFECTS ----------
 def apply_items(u, gain):
     gain += u["treat_upgrade"]
-
     if u["treat_magnet"] > 0:
         gain *= 2
         u["treat_magnet"] -= 1
-
     return max(gain, 1)
 
 # ---------- ACTIONS ----------
@@ -82,10 +77,7 @@ async def treat_action(i):
     u["last_treat"] = time.time()
 
     gain = apply_items(u, random.randint(5,10))
-
-    xp = gain
-    if time.time() < u["xp_boost_until"]:
-        xp *= 2
+    xp = gain * (2 if time.time() < u["xp_boost_until"] else 1)
 
     u["treats"] += gain
     u["xp"] += xp
@@ -102,7 +94,6 @@ async def beg_action(i):
 
     u["last_beg"] = time.time()
     gain = random.randint(10,25)
-
     u["treats"] += gain
     save_data(d)
 
@@ -116,7 +107,6 @@ async def work_action(i):
 
     u["last_work"] = time.time()
     gain = random.randint(20,40)
-
     u["treats"] += gain
     save_data(d)
 
@@ -164,7 +154,6 @@ async def daily(i: discord.Interaction):
         return await safe_send(i, content="come back later")
 
     u["last_daily"] = time.time()
-
     reward = 50 + (u["streak"] * 5)
 
     if u["double_daily"]:
@@ -173,8 +162,8 @@ async def daily(i: discord.Interaction):
 
     u["treats"] += reward
     u["streak"] += 1
-
     save_data(d)
+
     await safe_send(i, content=f"+{reward} treats")
 
 # ---------- COINFLIP ----------
@@ -184,23 +173,20 @@ async def coinflip(i: discord.Interaction, bet: int, choice: str):
 
     choice = choice.lower()
 
-    if bet <= 0:
+    if bet <= 0 or bet > u["treats"]:
         return await safe_send(i, content="invalid bet")
 
-    if bet > u["treats"]:
-        return await safe_send(i, content="not enough treats")
-
     if choice not in ["heads", "tails"]:
-        return await safe_send(i, content="choose heads or tails")
+        return await safe_send(i, content="choose heads/tails")
 
-    result = random.choice(["heads", "tails"])
+    result = random.choice(["heads","tails"])
 
     if result == choice:
         u["treats"] += bet
-        msg = f"🪙 {result} — you WON +{bet}"
+        msg = f"🪙 {result} — WON +{bet}"
     else:
         u["treats"] -= bet
-        msg = f"🪙 {result} — you lost -{bet}"
+        msg = f"🪙 {result} — lost -{bet}"
 
     save_data(d)
     await safe_send(i, content=msg)
@@ -213,7 +199,7 @@ async def shop(i: discord.Interaction):
     embed.add_field(name="Treat Magnet 🧲 — 20", value="double next treat\n`/buy treat_magnet`", inline=False)
     embed.add_field(name="Lucky Paw 🍀 — 25", value="flavor item\n`/buy lucky_paw`", inline=False)
     embed.add_field(name="Double Daily 📅 — 30", value="double next daily\n`/buy double_daily`", inline=False)
-    embed.add_field(name="XP Boost ⚡ — 30", value="2x xp 5 mins\n`/buy xp_boost`", inline=False)
+    embed.add_field(name="XP Boost ⚡ — 30", value="2x xp (5 min)\n`/buy xp_boost`", inline=False)
     embed.add_field(name="Big XP Pack 🌟 — 40", value="+200 xp\n`/buy big_xp_pack`", inline=False)
     embed.add_field(name="Treat Upgrade 🦴+ — 20", value="permanent +1\n`/buy treat_upgrade`", inline=False)
 
@@ -235,11 +221,8 @@ async def buy(i: discord.Interaction, item: str):
 
     item = item.lower()
 
-    if item not in prices:
-        return await safe_send(i, content="invalid item")
-
-    if u["treats"] < prices[item]:
-        return await safe_send(i, content="not enough")
+    if item not in prices or u["treats"] < prices[item]:
+        return await safe_send(i, content="invalid or not enough")
 
     u["treats"] -= prices[item]
 
@@ -258,55 +241,45 @@ async def buy(i: discord.Interaction, item: str):
     await safe_send(i, content=f"bought {item}")
 
 # ---------- RP ----------
-@tree.command(name="hug", description="Hug 🤗")
+@tree.command(name="hug")
 async def hug(i: discord.Interaction, member: discord.Member=None):
     target = member or i.user
     embed = discord.Embed(description=f"{i.user.mention} hugs {target.mention}")
     embed.set_image(url=random.choice(HUG_GIFS))
     await safe_send(i, embed=embed)
 
-@tree.command(name="pat", description="Pat 🐶")
+@tree.command(name="pat")
 async def pat(i: discord.Interaction, member: discord.Member=None):
     target = member or i.user
     embed = discord.Embed(description=f"{i.user.mention} pats {target.mention}")
     embed.set_image(url=random.choice(PAT_GIFS))
     await safe_send(i, embed=embed)
 
-@tree.command(name="cuddle", description="Cuddle 💖")
+@tree.command(name="cuddle")
 async def cuddle(i: discord.Interaction, member: discord.Member=None):
     target = member or i.user
     embed = discord.Embed(description=f"{i.user.mention} cuddles {target.mention}")
     embed.set_image(url=random.choice(CUDDLE_GIFS))
     await safe_send(i, embed=embed)
 
-# ---------- DEBUG LOGGING ----------
+# ---------- GLOBAL SYNC ----------
 @bot.event
 async def on_ready():
-    print("\n🔥 ===== BOT START =====")
+    print("\n🔥 ===== V10 GLOBAL SYNC =====")
 
     try:
+        tree.clear_commands(guild=None)
+        await tree.sync()
+        print("🧹 Cleared old commands")
+
+        await asyncio.sleep(2)
+
         synced = await tree.sync()
         print(f"🌍 Synced {len(synced)} commands")
 
-        local_cmds = [cmd.name for cmd in tree.get_commands()]
-        synced_cmds = [cmd.name for cmd in synced]
-
-        print("\n📦 LOCAL COMMANDS:")
-        for c in local_cmds:
-            print(f" - {c}")
-
-        print("\n🌍 SYNCED COMMANDS:")
-        for c in synced_cmds:
-            print(f" - {c}")
-
-        missing = [c for c in local_cmds if c not in synced_cmds]
-
-        if missing:
-            print("\n❌ MISSING COMMANDS:")
-            for c in missing:
-                print(f" - {c}")
-        else:
-            print("\n✅ ALL COMMANDS SYNCED")
+        print("\n📜 Commands:")
+        for cmd in synced:
+            print(f" - {cmd.name}")
 
     except Exception as e:
         print("❌ Sync error:", e)
