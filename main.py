@@ -3,295 +3,322 @@ from discord import app_commands
 from discord.ext import commands
 import json, random, time, os, asyncio
 
-# ======================
-# ⚙️ CONFIG
-# ======================
-
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    print("❌ TOKEN NOT FOUND")
+    print("NO TOKEN")
     exit()
 
-intents = discord.Intents.all()
+# SAFE INTENTS
+intents = discord.Intents.default()
+intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DATA_FILE = "arf_fish_v18.json"
+DATA_FILE = "arf_v20.json"
 
 # ======================
-# 🧠 DATA SYSTEM
+# DATA
 # ======================
 
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
     try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
+        return json.load(open(DATA_FILE))
     except:
         return {}
 
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def save_data(d):
+    json.dump(d, open(DATA_FILE, "w"), indent=2)
 
-def get_user(data, gid, uid):
+def get_user(d, gid, uid):
     gid, uid = str(gid), str(uid)
 
-    if gid not in data:
-        data[gid] = {}
+    if gid not in d:
+        d[gid] = {}
 
-    if uid not in data[gid]:
-        data[gid][uid] = {
-            "treats": 0,
-            "bond": 0,
-            "last_interaction": 0,
-            "is_favorite": False,
-            "memory": [],
-            "magnet": False,
-            "lucky": False,
-            "upgrade": 0,
-            "daily_boost": False
+    if uid not in d[gid]:
+        d[gid][uid] = {
+            "treats":0,
+            "bond":0,
+            "last":0,
+            "favorite":False,
+            "memory":[],
+            "magnet":False,
+            "lucky":False,
+            "upgrade":0,
+            "daily":False,
+            "mood":"happy"
         }
 
-    return data[gid][uid]
+    return d[gid][uid]
 
 # ======================
-# 💖 OBSESSION
+# MOOD
 # ======================
 
-def update_obsession(data, gid):
-    users = data.get(str(gid), {})
-    if not users:
-        return
+MOODS = ["happy","clingy","jealous","sleepy","chaotic"]
 
-    top = max(users.items(), key=lambda x: x[1]["bond"])[0]
+def update_mood(u):
+    if random.random() < 0.4:
+        u["mood"] = random.choice(MOODS)
 
-    for uid in users:
-        users[uid]["is_favorite"] = (uid == top)
+def moodify(u, lines):
+    mood = u["mood"]
 
-def update_user(data, gid, u, trigger=None):
-    now = time.time()
+    extras = {
+        "happy":["hehe","yay!!"],
+        "clingy":["stay… pls","don’t leave"],
+        "jealous":["…mine","who was that"],
+        "sleepy":["…huh","im sleepy"],
+        "chaotic":["WAIT","I DIDNT MEAN THAT"]
+    }
 
-    if now - u["last_interaction"] > 3600:
-        u["bond"] = max(0, u["bond"] - 1)
-
-    u["bond"] += 1
-    u["last_interaction"] = now
-
-    if trigger:
-        if len(u["memory"]) > 6:
-            u["memory"].pop(0)
-        u["memory"].append(trigger)
-
-    update_obsession(data, gid)
+    return random.choice(lines) + " " + random.choice(extras[mood])
 
 # ======================
-# ⏱ THINKING
+# SYSTEM
 # ======================
 
-async def think():
-    await asyncio.sleep(random.uniform(0.3, 0.8))
+def update_user(d,gid,u,action=None):
+    now=time.time()
+
+    if now-u["last"]>3600:
+        u["bond"]=max(0,u["bond"]-1)
+
+    u["bond"]+=1
+    u["last"]=now
+
+    if action:
+        u["memory"]=u["memory"][-5:]+[action]
+
+    update_mood(u)
 
 # ======================
-# 🛠 SAFE SEND
+# SEND
 # ======================
 
-async def send(i, msg=None, embed=None, view=None):
-    await think()
+async def send(i,msg=None,embed=None,view=None):
+    await asyncio.sleep(random.uniform(0.2,0.6))
 
     if not i.response.is_done():
-        await i.response.send_message(content=msg, embed=embed, view=view)
+        await i.response.send_message(content=msg,embed=embed,view=view)
     else:
-        await i.followup.send(content=msg, embed=embed, view=view)
+        await i.followup.send(content=msg,embed=embed,view=view)
 
 # ======================
-# 🎬 GIFS
+# GIFS
 # ======================
 
-GIFS = {
-    "hug": ["https://media.tenor.com/9e1aE7i1kV0AAAAC/anime-hug.gif"],
-    "pat": ["https://media.tenor.com/zrq4G5d0F6kAAAAC/headpat-anime.gif"],
-    "cuddle": ["https://media.tenor.com/0t7G5v6J6eYAAAAC/anime-cuddle.gif"],
-    "boop": ["https://media.tenor.com/5Z1WZz9X6V0AAAAC/anime-boop.gif"],
-    "kiss": ["https://media.tenor.com/fO9dXW5G7XQAAAAC/anime-kiss.gif"],
-    "bite": ["https://media.tenor.com/X7i6F0b7Y7kAAAAC/anime-bite.gif"],
-    "lick": ["https://media.tenor.com/Q7z6K5sZ1mYAAAAC/anime-lick.gif"]
+GIFS={
+"hug":["https://media.tenor.com/9e1aE7i1kV0AAAAC/anime-hug.gif"],
+"pat":["https://media.tenor.com/zrq4G5d0F6kAAAAC/headpat-anime.gif"],
+"cuddle":["https://media.tenor.com/0t7G5v6J6eYAAAAC/anime-cuddle.gif"],
+"boop":["https://media.tenor.com/5Z1WZz9X6V0AAAAC/anime-boop.gif"]
 }
 
 def gif(a): return random.choice(GIFS[a])
 
 # ======================
-# 🛒 SHOP UI
+# SHOP
 # ======================
 
-SHOP = {
-    "magnet": (20, "Double next treat"),
-    "lucky": (25, "Big treat reward"),
-    "upgrade": (30, "Permanent +1"),
-    "daily": (30, "Double daily"),
-    "bond": (50, "+10 bond")
+SHOP={
+"magnet":(20,"double treat"),
+"lucky":(25,"big treat"),
+"upgrade":(30,"+1 forever"),
+"daily":(30,"double daily"),
+"bond":(50,"+10 bond")
 }
 
 class ShopView(discord.ui.View):
-    def __init__(self, user_id):
+    def __init__(self,uid):
         super().__init__(timeout=60)
-        self.user_id = user_id
+        self.uid=uid
 
-    async def interaction_check(self, interaction):
-        return interaction.user.id == self.user_id
+    async def interaction_check(self,i):
+        return i.user.id==self.uid
 
-    async def buy(self, interaction, item):
-        data = load_data()
-        u = get_user(data, interaction.guild.id, interaction.user.id)
+    async def buy(self,i,item):
+        d=load_data()
+        u=get_user(d,i.guild.id,i.user.id)
 
-        cost = SHOP[item][0]
+        cost=SHOP[item][0]
 
-        if u["treats"] < cost:
-            return await interaction.response.send_message(
-                "not enough treats 💀", ephemeral=True
-            )
+        if u["treats"]<cost:
+            return await i.response.send_message("not enough 💀",ephemeral=True)
 
-        u["treats"] -= cost
+        u["treats"]-=cost
 
-        if item == "magnet": u["magnet"] = True
-        elif item == "lucky": u["lucky"] = True
-        elif item == "upgrade": u["upgrade"] += 1
-        elif item == "daily": u["daily_boost"] = True
-        elif item == "bond": u["bond"] += 10
+        if item=="magnet":u["magnet"]=True
+        if item=="lucky":u["lucky"]=True
+        if item=="upgrade":u["upgrade"]+=1
+        if item=="daily":u["daily"]=True
+        if item=="bond":u["bond"]+=10
 
-        save_data(data)
+        save_data(d)
 
-        await interaction.response.send_message(
-            f"bought **{item}** 🐾", ephemeral=True
-        )
+        await i.response.send_message(f"bought {item} 🐾",ephemeral=True)
 
-    @discord.ui.button(label="🧲 Magnet", style=discord.ButtonStyle.primary)
-    async def magnet(self, i, b): await self.buy(i, "magnet")
+    @discord.ui.button(label="Magnet",style=discord.ButtonStyle.primary)
+    async def m(self,i,b):await self.buy(i,"magnet")
 
-    @discord.ui.button(label="🍀 Lucky", style=discord.ButtonStyle.success)
-    async def lucky(self, i, b): await self.buy(i, "lucky")
+    @discord.ui.button(label="Lucky",style=discord.ButtonStyle.success)
+    async def l(self,i,b):await self.buy(i,"lucky")
 
-    @discord.ui.button(label="⚡ Boost", style=discord.ButtonStyle.secondary)
-    async def boost(self, i, b): await self.buy(i, "upgrade")
+    @discord.ui.button(label="Boost",style=discord.ButtonStyle.secondary)
+    async def u(self,i,b):await self.buy(i,"upgrade")
 
-    @discord.ui.button(label="📅 Daily", style=discord.ButtonStyle.secondary)
-    async def daily(self, i, b): await self.buy(i, "daily")
+    @discord.ui.button(label="Daily",style=discord.ButtonStyle.secondary)
+    async def d(self,i,b):await self.buy(i,"daily")
 
-    @discord.ui.button(label="💖 Bond", style=discord.ButtonStyle.danger)
-    async def bond(self, i, b): await self.buy(i, "bond")
+    @discord.ui.button(label="Bond",style=discord.ButtonStyle.danger)
+    async def b(self,i,b2):await self.buy(i,"bond")
 
-@tree.command(name="shop", description="open the shop 🐾")
+@tree.command(name="shop",description="shop 🐾")
 async def shop(i):
-    embed = discord.Embed(
-        title="🐾 Treat Shop",
-        description="click… things… I think?",
-        color=0xffb6c1
-    )
-
+    e=discord.Embed(title="🐾 shop",color=0xffb6c1)
     for k,(c,d) in SHOP.items():
-        embed.add_field(name=f"{k} — {c}", value=d, inline=False)
-
-    embed.set_footer(text="buttons below!!")
-
-    await send(i, embed=embed, view=ShopView(i.user.id))
+        e.add_field(name=f"{k} — {c}",value=d,inline=False)
+    await send(i,embed=e,view=ShopView(i.user.id))
 
 # ======================
-# 🎒 INVENTORY
+# INVENTORY
 # ======================
 
-@tree.command(name="inventory", description="check your stuff 🐾")
-async def inventory(i):
-    data = load_data()
-    u = get_user(data, i.guild.id, i.user.id)
+@tree.command(name="inventory",description="inventory 🐾")
+async def inv(i):
+    d=load_data()
+    u=get_user(d,i.guild.id,i.user.id)
 
-    embed = discord.Embed(title="🎒 Inventory", color=0x89CFF0)
+    e=discord.Embed(title="🎒 inventory",color=0x89CFF0)
+    e.add_field(name="treats",value=u["treats"])
+    e.add_field(name="bond",value=u["bond"])
+    e.add_field(name="mood",value=u["mood"])
 
-    embed.add_field(name="🦴 Treats", value=u["treats"], inline=False)
-
-    effects = []
-    if u["magnet"]: effects.append("🧲 Magnet ready")
-    if u["lucky"]: effects.append("🍀 Lucky ready")
-    if u["daily_boost"]: effects.append("📅 Daily ready")
-    if u["upgrade"] > 0: effects.append(f"⚡ +{u['upgrade']} passive")
-
-    if not effects:
-        effects.append("nothing 😭")
-
-    embed.add_field(name="✨ Effects", value="\n".join(effects), inline=False)
-    embed.add_field(name="💖 Bond", value=u["bond"], inline=False)
-
-    if u["is_favorite"]:
-        embed.set_footer(text="you’re the favorite 🐾")
-
-    await send(i, embed=embed)
+    await send(i,embed=e)
 
 # ======================
-# 🦴 ECONOMY
+# ECONOMY
 # ======================
 
-@tree.command(name="treat", description="get treats 🐾")
+@tree.command(name="treat",description="treat 🐾")
 async def treat(i):
-    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
     update_user(d,i.guild.id,u,"treat")
 
-    gain=random.randint(5,10)
+    g=random.randint(5,10)
 
-    if u["magnet"]: gain*=2; u["magnet"]=False
-    if u["lucky"]: gain=random.randint(15,25); u["lucky"]=False
+    if u["magnet"]:g*=2;u["magnet"]=False
+    if u["lucky"]:g=random.randint(15,25);u["lucky"]=False
 
-    gain+=u["upgrade"]
-    u["treats"]+=gain
+    g+=u["upgrade"]
+    u["treats"]+=g
 
     save_data(d)
-    await send(i, f"+{gain} treats 🐾")
+    await send(i,f"+{g} treats")
 
-@tree.command(name="daily", description="daily treats 📅")
+@tree.command(name="daily",description="daily")
 async def daily(i):
-    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
 
-    reward=50
-    if u["daily_boost"]:
-        reward*=2
-        u["daily_boost"]=False
+    r=50
+    if u["daily"]:r*=2;u["daily"]=False
 
-    u["treats"]+=reward
+    u["treats"]+=r
     save_data(d)
 
-    await send(i, f"+{reward} treats 🐾")
+    await send(i,f"+{r} daily")
 
-@tree.command(name="coinflip", description="flip coin 🪙")
-async def coinflip(i):
-    await send(i, random.choice(["heads","tails"]))
-
-# ======================
-# 🎭 RP
-# ======================
-
-def rp(action, target, fav):
-    lines = {
-        "hug":[f"*hugs {target.mention}* don’t move 😭"],
-        "pat":[f"*pat pat* good… something"],
-        "cuddle":[f"*cuddles* okay wait this is nice 😳"],
-        "boop":[f"*boop* hehe"],
-        "kiss":[f"*quick kiss* WAIT 😭"],
-        "bite":[f"*nom*"],
-        "lick":[f"*lick* WAIT 💀"]
-    }[action]
-
-    if fav:
-        lines.append("mine 🐾")
-
-    return random.choice(lines)
-
-@tree.command(name="hug", description="hug 🐾")
-async def hug(i, m: discord.Member):
-    d=load_data(); u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"hug"); save_data(d)
-    await send(i, f"{rp('hug',m,u['is_favorite'])}\n{gif('hug')}")
+@tree.command(name="coinflip",description="coin")
+async def coin(i):
+    await send(i,random.choice(["heads","tails"]))
 
 # ======================
-# 💬 PASSIVE
+# RP
+# ======================
+
+@tree.command(name="hug",description="hug")
+async def hug(i,m:discord.Member):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"hug");save_data(d)
+
+    lines=[f"*hugs {m.mention}* don’t move"]
+    await send(i,moodify(u,lines)+"\n"+gif("hug"))
+
+# ======================
+# TROLL / CHAOTIC
+# ======================
+
+@tree.command(name="lewd",description="do you mean food..?")
+async def lewd(i):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"lewd");save_data(d)
+
+    lines=[
+        "lewd… is that edible??",
+        "WAIT that sounds illegal",
+        "why are you like this 😭",
+        "I don’t understand but ok"
+    ]
+
+    await send(i,moodify(u,lines))
+
+@tree.command(name="heat",description="oh no…")
+async def heat(i):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"heat");save_data(d)
+
+    lines=[
+        "WHY AM I WARM",
+        "THIS IS YOUR FAULT",
+        "something is wrong 😭"
+    ]
+
+    await send(i,moodify(u,lines))
+
+@tree.command(name="nsfw",description="DO NOT THE PUPPYGIRL")
+async def nsfw(i):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"nsfw");save_data(d)
+
+    lines=[
+        "DO NOT ME",
+        "I feel unsafe",
+        "why would you say that"
+    ]
+
+    await send(i,moodify(u,lines))
+
+@tree.command(name="collar",description="…why do you have that")
+async def collar(i):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"collar");save_data(d)
+
+    lines=[
+        "is that for me??",
+        "WAIT I kinda like it",
+        "this feels like a trap"
+    ]
+
+    await send(i,moodify(u,lines))
+
+@tree.command(name="leash",description="WAIT WAIT WAIT")
+async def leash(i):
+    d=load_data();u=get_user(d,i.guild.id,i.user.id)
+    update_user(d,i.guild.id,u,"leash");save_data(d)
+
+    lines=[
+        "WHERE ARE WE GOING",
+        "WAIT SLOW DOWN",
+        "HEY 😭"
+    ]
+
+    await send(i,moodify(u,lines))
+
+# ======================
+# PASSIVE
 # ======================
 
 @bot.event
@@ -299,20 +326,20 @@ async def on_message(msg):
     if msg.author.bot: return
 
     if "good girl" in msg.content.lower():
-        await msg.reply("*tail wagging* WAIT me?? 😳")
+        await msg.reply("*tail wagging* WAIT ME??")
 
-    if random.random() < 0.03:
+    if random.random()<0.03:
         await msg.reply("…hi")
 
     await bot.process_commands(msg)
 
 # ======================
-# 🚀 READY
+# READY
 # ======================
 
 @bot.event
 async def on_ready():
+    print("V20 READY")
     await tree.sync()
-    print(f"✅ V18 READY: {bot.user}")
 
 bot.run(TOKEN)
