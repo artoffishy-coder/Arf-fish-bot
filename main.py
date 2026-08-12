@@ -1,345 +1,332 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import json, random, time, os, asyncio
+
+import json
+import os
+import random
+import time
+
+
+# =========================================================
+# ARF-FISH v0.1
+# =========================================================
 
 TOKEN = os.getenv("TOKEN")
+
 if not TOKEN:
-    print("NO TOKEN")
-    exit()
+    raise RuntimeError("TOKEN environment variable is missing.")
 
-# SAFE INTENTS
+
+# =========================================================
+# BOT SETUP
+# =========================================================
+
 intents = discord.Intents.default()
-intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
 tree = bot.tree
 
-DATA_FILE = "arf_v20.json"
 
-# ======================
-# DATA
-# ======================
+# =========================================================
+# FILES
+# =========================================================
+
+DATA_FILE = "arf_data.json"
+
+
+# =========================================================
+# DATA SYSTEM
+# =========================================================
 
 def load_data():
+    """Load all saved Arf data."""
+
     if not os.path.exists(DATA_FILE):
         return {}
+
     try:
-        return json.load(open(DATA_FILE))
-    except:
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    except (json.JSONDecodeError, OSError):
+        print("WARNING: Could not load data file. Starting with empty data.")
         return {}
 
-def save_data(d):
-    json.dump(d, open(DATA_FILE, "w"), indent=2)
 
-def get_user(d, gid, uid):
-    gid, uid = str(gid), str(uid)
+def save_data(data):
+    """Save all Arf data."""
 
-    if gid not in d:
-        d[gid] = {}
+    with open(DATA_FILE, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=2)
 
-    if uid not in d[gid]:
-        d[gid][uid] = {
-            "treats":0,
-            "bond":0,
-            "last":0,
-            "favorite":False,
-            "memory":[],
-            "magnet":False,
-            "lucky":False,
-            "upgrade":0,
-            "daily":False,
-            "mood":"happy"
+
+def get_user(data, guild_id, user_id):
+    """
+    Get a user's profile.
+
+    Creates the profile if it doesn't exist yet.
+    """
+
+    guild_id = str(guild_id)
+    user_id = str(user_id)
+
+    # Create guild section
+    if guild_id not in data:
+        data[guild_id] = {}
+
+    # Create user section
+    if user_id not in data[guild_id]:
+        data[guild_id][user_id] = {
+            "treats": 0,
+
+            "inventory": {},
+
+            "upgrade_level": 0,
+
+            "location": "Backyard",
+
+            "last_dig": 0
         }
 
-    return d[gid][uid]
+    return data[guild_id][user_id]
 
-# ======================
-# MOOD
-# ======================
 
-MOODS = ["happy","clingy","jealous","sleepy","chaotic"]
+# =========================================================
+# DIGGING
+# =========================================================
 
-def update_mood(u):
-    if random.random() < 0.4:
-        u["mood"] = random.choice(MOODS)
+DIG_COOLDOWN = 4.0
+MIN_DIG_COOLDOWN = 1.5
 
-def moodify(u, lines):
-    mood = u["mood"]
 
-    extras = {
-        "happy":["hehe","yay!!"],
-        "clingy":["stay… pls","don’t leave"],
-        "jealous":["…mine","who was that"],
-        "sleepy":["…huh","im sleepy"],
-        "chaotic":["WAIT","I DIDNT MEAN THAT"]
-    }
-
-    return random.choice(lines) + " " + random.choice(extras[mood])
-
-# ======================
-# SYSTEM
-# ======================
-
-def update_user(d,gid,u,action=None):
-    now=time.time()
-
-    if now-u["last"]>3600:
-        u["bond"]=max(0,u["bond"]-1)
-
-    u["bond"]+=1
-    u["last"]=now
-
-    if action:
-        u["memory"]=u["memory"][-5:]+[action]
-
-    update_mood(u)
-
-# ======================
-# SEND
-# ======================
-
-async def send(i,msg=None,embed=None,view=None):
-    await asyncio.sleep(random.uniform(0.2,0.6))
-
-    if not i.response.is_done():
-        await i.response.send_message(content=msg,embed=embed,view=view)
-    else:
-        await i.followup.send(content=msg,embed=embed,view=view)
-
-# ======================
-# GIFS
-# ======================
-
-GIFS={
-"hug":["https://media.tenor.com/9e1aE7i1kV0AAAAC/anime-hug.gif"],
-"pat":["https://media.tenor.com/zrq4G5d0F6kAAAAC/headpat-anime.gif"],
-"cuddle":["https://media.tenor.com/0t7G5v6J6eYAAAAC/anime-cuddle.gif"],
-"boop":["https://media.tenor.com/5Z1WZz9X6V0AAAAC/anime-boop.gif"]
-}
-
-def gif(a): return random.choice(GIFS[a])
-
-# ======================
-# SHOP
-# ======================
-
-SHOP={
-"magnet":(20,"double treat"),
-"lucky":(25,"big treat"),
-"upgrade":(30,"+1 forever"),
-"daily":(30,"double daily"),
-"bond":(50,"+10 bond")
-}
-
-class ShopView(discord.ui.View):
-    def __init__(self,uid):
-        super().__init__(timeout=60)
-        self.uid=uid
-
-    async def interaction_check(self,i):
-        return i.user.id==self.uid
-
-    async def buy(self,i,item):
-        d=load_data()
-        u=get_user(d,i.guild.id,i.user.id)
-
-        cost=SHOP[item][0]
-
-        if u["treats"]<cost:
-            return await i.response.send_message("not enough 💀",ephemeral=True)
-
-        u["treats"]-=cost
-
-        if item=="magnet":u["magnet"]=True
-        if item=="lucky":u["lucky"]=True
-        if item=="upgrade":u["upgrade"]+=1
-        if item=="daily":u["daily"]=True
-        if item=="bond":u["bond"]+=10
-
-        save_data(d)
-
-        await i.response.send_message(f"bought {item} 🐾",ephemeral=True)
-
-    @discord.ui.button(label="Magnet",style=discord.ButtonStyle.primary)
-    async def m(self,i,b):await self.buy(i,"magnet")
-
-    @discord.ui.button(label="Lucky",style=discord.ButtonStyle.success)
-    async def l(self,i,b):await self.buy(i,"lucky")
-
-    @discord.ui.button(label="Boost",style=discord.ButtonStyle.secondary)
-    async def u(self,i,b):await self.buy(i,"upgrade")
-
-    @discord.ui.button(label="Daily",style=discord.ButtonStyle.secondary)
-    async def d(self,i,b):await self.buy(i,"daily")
-
-    @discord.ui.button(label="Bond",style=discord.ButtonStyle.danger)
-    async def b(self,i,b2):await self.buy(i,"bond")
-
-@tree.command(name="shop",description="shop 🐾")
-async def shop(i):
-    e=discord.Embed(title="🐾 shop",color=0xffb6c1)
-    for k,(c,d) in SHOP.items():
-        e.add_field(name=f"{k} — {c}",value=d,inline=False)
-    await send(i,embed=e,view=ShopView(i.user.id))
-
-# ======================
-# INVENTORY
-# ======================
-
-@tree.command(name="inventory",description="inventory 🐾")
-async def inv(i):
-    d=load_data()
-    u=get_user(d,i.guild.id,i.user.id)
-
-    e=discord.Embed(title="🎒 inventory",color=0x89CFF0)
-    e.add_field(name="treats",value=u["treats"])
-    e.add_field(name="bond",value=u["bond"])
-    e.add_field(name="mood",value=u["mood"])
-
-    await send(i,embed=e)
-
-# ======================
-# ECONOMY
-# ======================
-
-@tree.command(name="treat",description="treat 🐾")
-async def treat(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"treat")
-
-    g=random.randint(5,10)
-
-    if u["magnet"]:g*=2;u["magnet"]=False
-    if u["lucky"]:g=random.randint(15,25);u["lucky"]=False
-
-    g+=u["upgrade"]
-    u["treats"]+=g
-
-    save_data(d)
-    await send(i,f"+{g} treats")
-
-@tree.command(name="daily",description="daily")
-async def daily(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-
-    r=50
-    if u["daily"]:r*=2;u["daily"]=False
-
-    u["treats"]+=r
-    save_data(d)
-
-    await send(i,f"+{r} daily")
-
-@tree.command(name="coinflip",description="coin")
-async def coin(i):
-    await send(i,random.choice(["heads","tails"]))
-
-# ======================
-# RP
-# ======================
-
-@tree.command(name="hug",description="hug")
-async def hug(i,m:discord.Member):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"hug");save_data(d)
-
-    lines=[f"*hugs {m.mention}* don’t move"]
-    await send(i,moodify(u,lines)+"\n"+gif("hug"))
-
-# ======================
-# TROLL / CHAOTIC
-# ======================
-
-@tree.command(name="lewd",description="do you mean food..?")
-async def lewd(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"lewd");save_data(d)
-
-    lines=[
-        "lewd… is that edible??",
-        "WAIT that sounds illegal",
-        "why are you like this 😭",
-        "I don’t understand but ok"
-    ]
-
-    await send(i,moodify(u,lines))
-
-@tree.command(name="heat",description="oh no…")
-async def heat(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"heat");save_data(d)
-
-    lines=[
-        "WHY AM I WARM",
-        "THIS IS YOUR FAULT",
-        "something is wrong 😭"
-    ]
-
-    await send(i,moodify(u,lines))
-
-@tree.command(name="nsfw",description="DO NOT THE PUPPYGIRL")
-async def nsfw(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"nsfw");save_data(d)
-
-    lines=[
-        "DO NOT ME",
-        "I feel unsafe",
-        "why would you say that"
-    ]
-
-    await send(i,moodify(u,lines))
-
-@tree.command(name="collar",description="…why do you have that")
-async def collar(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"collar");save_data(d)
-
-    lines=[
-        "is that for me??",
-        "WAIT I kinda like it",
-        "this feels like a trap"
-    ]
-
-    await send(i,moodify(u,lines))
-
-@tree.command(name="leash",description="WAIT WAIT WAIT")
-async def leash(i):
-    d=load_data();u=get_user(d,i.guild.id,i.user.id)
-    update_user(d,i.guild.id,u,"leash");save_data(d)
-
-    lines=[
-        "WHERE ARE WE GOING",
-        "WAIT SLOW DOWN",
-        "HEY 😭"
-    ]
-
-    await send(i,moodify(u,lines))
-
-# ======================
-# PASSIVE
-# ======================
-
-@bot.event
-async def on_message(msg):
-    if msg.author.bot: return
-
-    if "good girl" in msg.content.lower():
-        await msg.reply("*tail wagging* WAIT ME??")
-
-    if random.random()<0.03:
-        await msg.reply("…hi")
-
-    await bot.process_commands(msg)
-
-# ======================
-# READY
-# ======================
+# =========================================================
+# READY EVENT
+# =========================================================
 
 @bot.event
 async def on_ready():
-    print("V20 READY")
-    await tree.sync()
+
+    print(f"Logged in as {bot.user}")
+
+    try:
+        synced = await tree.sync()
+        print(f"Synced {len(synced)} slash command(s).")
+
+    except Exception as error:
+        print(f"Command sync failed: {error}")
+
+
+# =========================================================
+# /START
+# =========================================================
+
+@tree.command(
+    name="start",
+    description="Start your adventure with Arf-fish."
+)
+async def start(interaction: discord.Interaction):
+
+    data = load_data()
+
+    get_user(
+        data,
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    save_data(data)
+
+    embed = discord.Embed(
+        title="🐾 Welcome to Arf-fish!",
+        description=(
+            "Arf is a chaotic little hoarder who likes finding stuff.\n\n"
+
+            "⛏️ **Dig** — find things buried around your location.\n"
+            "🎒 **Bag** — see what you've found.\n"
+            "🎁 **Give** — trade your findings for treats.\n"
+            "🛒 **Shop** — spend treats on upgrades.\n"
+            "🗺️ **Journey** — explore new places.\n\n"
+
+            "That's basically it.\n\n"
+
+            "**Go dig something up.** 🐾"
+        )
+    )
+
+    embed.set_footer(text="Arf-fish 🐟")
+
+    await interaction.response.send_message(embed=embed)
+
+
+# =========================================================
+# /HELP
+# =========================================================
+
+@tree.command(
+    name="help",
+    description="Learn how Arf-fish works."
+)
+async def help_command(interaction: discord.Interaction):
+
+    embed = discord.Embed(
+        title="📖 Arf-fish Help",
+        description="Here's the important stuff!",
+    )
+
+    embed.add_field(
+        name="⛏️ /dig",
+        value="Dig around your current location and find something.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎒 /inventory",
+        value="Look at the things you've collected.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎁 /give",
+        value="Give your collected items to Arf for treats.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🛒 /shop",
+        value="Spend treats on upgrades.",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🗺️ /journey",
+        value="Travel to new locations.",
+        inline=False
+    )
+
+    embed.set_footer(text="More commands will appear as Arf grows! 🐾")
+
+    await interaction.response.send_message(embed=embed)
+
+
+# =========================================================
+# /DIG
+# =========================================================
+
+@tree.command(
+    name="dig",
+    description="Dig around and find something."
+)
+async def dig(interaction: discord.Interaction):
+
+    data = load_data()
+
+    user = get_user(
+        data,
+        interaction.guild.id,
+        interaction.user.id
+    )
+
+    now = time.time()
+
+    # -----------------------------------------
+    # Calculate cooldown
+    # -----------------------------------------
+
+    cooldown = max(
+        MIN_DIG_COOLDOWN,
+        DIG_COOLDOWN - (user["upgrade_level"] * 0.5)
+    )
+
+    elapsed = now - user["last_dig"]
+
+    # -----------------------------------------
+    # Still on cooldown
+    # -----------------------------------------
+
+    if elapsed < cooldown:
+
+        remaining = cooldown - elapsed
+
+        await interaction.response.send_message(
+            f"⏳ Arf needs a moment!\n"
+            f"Try digging again in **{remaining:.1f}s**.",
+            ephemeral=True
+        )
+
+        return
+
+    # -----------------------------------------
+    # Loot table
+    # -----------------------------------------
+
+    loot_table = [
+        ("🪨", "Rock", "Common", 55),
+        ("👟", "Old Shoe", "Common", 25),
+        ("🦴", "Bone", "Uncommon", 12),
+        ("🪙", "Old Coin", "Rare", 6),
+        ("💎", "Shiny Gem", "Very Rare", 2),
+    ]
+
+    roll = random.uniform(0, 100)
+
+    total = 0
+    found = None
+
+    for emoji, name, rarity, chance in loot_table:
+
+        total += chance
+
+        if roll <= total:
+            found = (emoji, name, rarity)
+            break
+
+    # Safety fallback
+    if found is None:
+        found = loot_table[0][:3]
+
+    emoji, item_name, rarity = found
+
+    # -----------------------------------------
+    # Add item to inventory
+    # -----------------------------------------
+
+    if item_name not in user["inventory"]:
+        user["inventory"][item_name] = 0
+
+    user["inventory"][item_name] += 1
+
+    # Save cooldown timestamp
+    user["last_dig"] = now
+
+    save_data(data)
+
+    # -----------------------------------------
+    # Result
+    # -----------------------------------------
+
+    embed = discord.Embed(
+        title="⛏️ Dig!",
+        description=(
+            f"You dug around in the **{user['location']}**...\n\n"
+            f"**{emoji} {item_name}**\n"
+            f"*{rarity}*"
+        )
+    )
+
+    embed.set_footer(
+        text="Something else might be hiding down there... 🐾"
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+
+# =========================================================
+# RUN
+# =========================================================
 
 bot.run(TOKEN)
